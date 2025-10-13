@@ -1,5 +1,6 @@
 from pyrogram import Client
 from config import API_ID, API_HASH, BOT_TOKEN
+from pyromod import listen  # Important: Import pyromod
 
 class Bot(Client):
 
