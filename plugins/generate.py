@@ -22,18 +22,30 @@ SESSION_STRING_SIZE = 351
 
 @Client.on_message(filters.private & ~filters.forwarded & filters.command(["logout"]))
 async def logout(client, message):
+    # First check if user exists in database
+    if not await db.is_user_exist(message.from_user.id):
+        await message.reply("**You are not logged in.**")
+        return
+    
     user_data = await db.get_session(message.from_user.id)  
     if user_data is None:
+        await message.reply("**You are not logged in.**")
         return 
+    
     await db.set_session(message.from_user.id, session=None)  
     await message.reply("**Logout Successfully** ♦")
 
 @Client.on_message(filters.private & ~filters.forwarded & filters.command(["login"]))
 async def main(bot: Client, message: Message):
+    # First add user to database if not exists
+    if not await db.is_user_exist(message.from_user.id):
+        await db.add_user(message.from_user.id, message.from_user.first_name)
+    
     user_data = await db.get_session(message.from_user.id)
     if user_data is not None:
         await message.reply("**Your Are Already Logged In. First /logout Your Old Session. Then Do Login.**")
         return 
+    
     user_id = int(message.from_user.id)
     phone_number_msg = await bot.ask(chat_id=user_id, text="<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889</code>")
     if phone_number_msg.text=='/cancel':
@@ -69,19 +81,19 @@ async def main(bot: Client, message: Message):
         except PasswordHashInvalid:
             await two_step_msg.reply('**Invalid Password Provided**')
             return
+    
     string_session = await client.export_session_string()
     await client.disconnect()
+    
     if len(string_session) < SESSION_STRING_SIZE:
         return await message.reply('<b>invalid session sring</b>')
+    
     try:
-        user_data = await db.get_session(message.from_user.id)
-        if user_data is None:
-            uclient = Client(":memory:", session_string=string_session, api_id=API_ID, api_hash=API_HASH)
-            await uclient.connect()
-            await db.set_session(message.from_user.id, session=string_session)
+        # Save session to database
+        await db.set_session(message.from_user.id, session=string_session)
+        await bot.send_message(message.from_user.id, "<b>Account Login Successfully.\n\nNow you can use /accept command to accept all pending join requests.\n\nIf You Get Any Error Related To AUTH KEY Then /logout first and /login again</b>")
     except Exception as e:
         return await message.reply_text(f"<b>ERROR IN LOGIN:</b> `{e}`")
-    await bot.send_message(message.from_user.id, "<b>Account Login Successfully.\n\nIf You Get Any Error Related To AUTH KEY Then /logout first and /login again</b>")
 
 
 # Don't Remove Credit Tg - @VJ_Botz
