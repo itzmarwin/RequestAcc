@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 # Disable pyrogram's internal logging for cleaner output
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
+# ========================================
+# IMPORT PYROMOD WITH PROPER PATCHING
+# ========================================
+try:
+    import pyromod
+    from pyromod import listen
+    from pyromod.listen.listen import ListenerTypes
+    PYROMOD_LOADED = True
+    logger.info("✅ Pyromod imported successfully")
+except Exception as e:
+    PYROMOD_LOADED = False
+    logger.warning(f"⚠️  Pyromod import failed: {e}")
+
 class Bot(Client):
     def __init__(self):
         try:
@@ -42,21 +55,19 @@ class Bot(Client):
             logger.info("🔄 Starting bot...")
             await super().start()
             
-            # CRITICAL FIX: Initialize pyromod listeners manually
-            try:
-                from pyromod.listen.listen import ListenerTypes
-                # Initialize all listener types
-                self.listeners = {
-                    ListenerTypes.MESSAGE: [],
-                    ListenerTypes.CALLBACK_QUERY: [],
-                    ListenerTypes.INLINE_QUERY: [],
-                    ListenerTypes.CHOSEN_INLINE_RESULT: [],
-                    ListenerTypes.CHAT_JOIN_REQUEST: [],
-                }
-                logger.info("✅ Pyromod listeners initialized successfully")
-            except Exception as e:
-                logger.warning(f"⚠️  Pyromod listener initialization warning: {e}")
-                # Continue anyway - bot will still work for basic commands
+            # CRITICAL FIX: Manually initialize pyromod listeners
+            if PYROMOD_LOADED:
+                try:
+                    # Initialize listeners dictionary for all types
+                    self.listeners = {}
+                    for listener_type in ListenerTypes:
+                        self.listeners[listener_type] = []
+                    
+                    logger.info("✅ Pyromod listeners initialized successfully")
+                except Exception as e:
+                    logger.warning(f"⚠️  Pyromod listener initialization failed: {e}")
+            else:
+                logger.warning("⚠️  Pyromod not loaded - /login and /accept commands may not work")
             
             # Get bot information
             me = await self.get_me()
