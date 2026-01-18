@@ -1,10 +1,18 @@
 import asyncio 
 from pyrogram import Client, filters, enums
-from pyrogram.errors import PeerIdInvalid, ChannelPrivate, UserNotParticipant, ListenerTimeout
+from pyrogram.errors import PeerIdInvalid, ChannelPrivate, UserNotParticipant
 from config import LOG_CHANNEL, API_ID, API_HASH, NEW_REQ_MODE
 from plugins.database import db
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import logging
+
+# Import ListenerTimeout from pyromod
+try:
+    from pyromod.exceptions import ListenerTimeout
+except ImportError:
+    # If not available, create a custom exception
+    class ListenerTimeout(Exception):
+        pass
 
 logger = logging.getLogger(__name__)
 
