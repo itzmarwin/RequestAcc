@@ -5,7 +5,6 @@
 import traceback
 from pyrogram.types import Message
 from pyrogram import Client, filters
-from pyrogram.errors import ListenerTimeout
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import (
     ApiIdInvalid,
@@ -18,6 +17,14 @@ from pyrogram.errors import (
 from config import API_ID, API_HASH
 from plugins.database import db
 import logging
+
+# Import ListenerTimeout from pyromod
+try:
+    from pyromod.exceptions import ListenerTimeout
+except ImportError:
+    # If not available, create a custom exception
+    class ListenerTimeout(Exception):
+        pass
 
 logger = logging.getLogger(__name__)
 
