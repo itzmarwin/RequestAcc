@@ -4,14 +4,6 @@ from config import API_ID, API_HASH, BOT_TOKEN
 import logging
 import sys
 
-# Import pyromod with error handling
-try:
-    from pyromod import listen
-    PYROMOD_AVAILABLE = True
-except ImportError:
-    PYROMOD_AVAILABLE = False
-    logger.warning("⚠️  pyromod not available, some features may not work")
-
 # ========================================
 # LOGGING CONFIGURATION
 # ========================================
@@ -32,7 +24,7 @@ class Bot(Client):
     def __init__(self):
         try:
             super().__init__(
-                name="vj_join_request_bot",  # Fixed: Removed spaces (spaces can cause issues)
+                name="vj_join_request_bot",
                 api_id=API_ID,
                 api_hash=API_HASH,
                 bot_token=BOT_TOKEN,
@@ -40,15 +32,6 @@ class Bot(Client):
                 workers=50,
                 sleep_threshold=10
             )
-            
-            # Initialize pyromod listeners if available
-            if PYROMOD_AVAILABLE:
-                try:
-                    self.listeners = {}
-                    logger.info("✅ Pyromod listeners initialized")
-                except Exception as e:
-                    logger.warning(f"⚠️  Could not initialize pyromod: {e}")
-            
             logger.info("✅ Bot instance created successfully")
         except Exception as e:
             logger.error(f"❌ Failed to create bot instance: {e}")
@@ -58,6 +41,22 @@ class Bot(Client):
         try:
             logger.info("🔄 Starting bot...")
             await super().start()
+            
+            # CRITICAL FIX: Initialize pyromod listeners manually
+            try:
+                from pyromod.listen.listen import ListenerTypes
+                # Initialize all listener types
+                self.listeners = {
+                    ListenerTypes.MESSAGE: [],
+                    ListenerTypes.CALLBACK_QUERY: [],
+                    ListenerTypes.INLINE_QUERY: [],
+                    ListenerTypes.CHOSEN_INLINE_RESULT: [],
+                    ListenerTypes.CHAT_JOIN_REQUEST: [],
+                }
+                logger.info("✅ Pyromod listeners initialized successfully")
+            except Exception as e:
+                logger.warning(f"⚠️  Pyromod listener initialization warning: {e}")
+                # Continue anyway - bot will still work for basic commands
             
             # Get bot information
             me = await self.get_me()
@@ -97,7 +96,7 @@ class Bot(Client):
             logger.error(f"   Error type: {type(e).__name__}")
             logger.error("\n💡 Common fixes:")
             logger.error("   1. Check all environment variables are set correctly")
-            logger.error("   2. Verify BOT_TOKEN is valid (test at https://api.telegram.org/bot<TOKEN>/getMe)")
+            logger.error("   2. Verify BOT_TOKEN is valid")
             logger.error("   3. Check API_ID and API_HASH from https://my.telegram.org")
             logger.error("   4. Ensure internet connection is stable")
             sys.exit(1)
