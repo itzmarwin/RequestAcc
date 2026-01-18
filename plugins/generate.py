@@ -5,7 +5,7 @@
 import traceback
 from pyrogram.types import Message
 from pyrogram import Client, filters
-from asyncio.exceptions import TimeoutError
+from pyrogram.errors import ListenerTimeout
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import (
     ApiIdInvalid,
@@ -17,11 +17,17 @@ from pyrogram.errors import (
 )
 from config import API_ID, API_HASH
 from plugins.database import db
+import logging
+
+logger = logging.getLogger(__name__)
 
 SESSION_STRING_SIZE = 351
 
 @Client.on_message(filters.private & ~filters.forwarded & filters.command(["logout"]))
 async def logout(client, message):
+    if not message.from_user:
+        return await message.reply("⚠️ Please send this command from your personal account.")
+    
     # First check if user exists in database
     if not await db.is_user_exist(message.from_user.id):
         await message.reply("**You are not logged in.**")
@@ -37,6 +43,9 @@ async def logout(client, message):
 
 @Client.on_message(filters.private & ~filters.forwarded & filters.command(["login"]))
 async def main(bot: Client, message: Message):
+    if not message.from_user:
+        return await message.reply("⚠️ Please send this command from your personal account.")
+    
     # First add user to database if not exists
     if not await db.is_user_exist(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name)
@@ -47,51 +56,118 @@ async def main(bot: Client, message: Message):
         return 
     
     user_id = int(message.from_user.id)
-    phone_number_msg = await bot.ask(chat_id=user_id, text="<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889</code>")
-    if phone_number_msg.text=='/cancel':
-        return await phone_number_msg.reply('<b>process cancelled !</b>')
+    
+    try:
+        phone_number_msg = await bot.ask(
+            chat_id=user_id, 
+            text="<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889</code>",
+            timeout=300
+        )
+    except ListenerTimeout:
+        return await message.reply("**⏰ Timeout! Login process cancelled. Please try /login again.**")
+    except Exception as e:
+        logger.error(f"Error in ask: {e}")
+        return await message.reply(f"**Error: {str(e)}\n\nPlease try /login again.**")
+    
+    if phone_number_msg.text == '/cancel':
+        return await phone_number_msg.reply('<b>Process cancelled!</b>')
+    
     phone_number = phone_number_msg.text
     client = Client(":memory:", API_ID, API_HASH)
-    await client.connect()
+    
+    try:
+        await client.connect()
+    except Exception as e:
+        return await phone_number_msg.reply(f"**Connection Error: {str(e)}**")
+    
     await phone_number_msg.reply("Sending OTP...")
+    
     try:
         code = await client.send_code(phone_number)
-        phone_code_msg = await bot.ask(user_id, "Please check for an OTP in official telegram account. If you got it, send OTP here after reading the below format. \n\nIf OTP is `12345`, **please send it as** `1 2 3 4 5`.\n\n**Enter /cancel to cancel The Procces**", filters=filters.text, timeout=600)
     except PhoneNumberInvalid:
-        await phone_number_msg.reply('`PHONE_NUMBER` **is invalid.**')
-        return
-    if phone_code_msg.text=='/cancel':
-        return await phone_code_msg.reply('<b>process cancelled !</b>')
+        await client.disconnect()
+        return await phone_number_msg.reply('**Phone number is invalid.**')
+    except Exception as e:
+        await client.disconnect()
+        return await phone_number_msg.reply(f"**Error: {str(e)}**")
+    
+    try:
+        phone_code_msg = await bot.ask(
+            user_id, 
+            "Please check for an OTP in official telegram account. If you got it, send OTP here after reading the below format. \n\nIf OTP is `12345`, **please send it as** `1 2 3 4 5`.\n\n**Enter /cancel to cancel the process**", 
+            filters=filters.text, 
+            timeout=600
+        )
+    except ListenerTimeout:
+        await client.disconnect()
+        return await message.reply("**⏰ Timeout! Login process cancelled.**")
+    except Exception as e:
+        await client.disconnect()
+        logger.error(f"Error in OTP ask: {e}")
+        return await message.reply(f"**Error: {str(e)}**")
+    
+    if phone_code_msg.text == '/cancel':
+        await client.disconnect()
+        return await phone_code_msg.reply('<b>Process cancelled!</b>')
+    
     try:
         phone_code = phone_code_msg.text.replace(" ", "")
         await client.sign_in(phone_number, code.phone_code_hash, phone_code)
     except PhoneCodeInvalid:
-        await phone_code_msg.reply('**OTP is invalid.**')
-        return
+        await client.disconnect()
+        return await phone_code_msg.reply('**OTP is invalid.**')
     except PhoneCodeExpired:
-        await phone_code_msg.reply('**OTP is expired.**')
-        return
+        await client.disconnect()
+        return await phone_code_msg.reply('**OTP is expired.**')
     except SessionPasswordNeeded:
-        two_step_msg = await bot.ask(user_id, '**Your account has enabled two-step verification. Please provide the password.\n\nEnter /cancel to cancel The Procces**', filters=filters.text, timeout=300)
-        if two_step_msg.text=='/cancel':
-            return await two_step_msg.reply('<b>process cancelled !</b>')
+        try:
+            two_step_msg = await bot.ask(
+                user_id, 
+                '**Your account has enabled two-step verification. Please provide the password.\n\nEnter /cancel to cancel the process**', 
+                filters=filters.text, 
+                timeout=300
+            )
+        except ListenerTimeout:
+            await client.disconnect()
+            return await message.reply("**⏰ Timeout! Login process cancelled.**")
+        except Exception as e:
+            await client.disconnect()
+            return await message.reply(f"**Error: {str(e)}**")
+        
+        if two_step_msg.text == '/cancel':
+            await client.disconnect()
+            return await two_step_msg.reply('<b>Process cancelled!</b>')
+        
         try:
             password = two_step_msg.text
             await client.check_password(password=password)
         except PasswordHashInvalid:
-            await two_step_msg.reply('**Invalid Password Provided**')
-            return
+            await client.disconnect()
+            return await two_step_msg.reply('**Invalid Password Provided**')
+        except Exception as e:
+            await client.disconnect()
+            return await two_step_msg.reply(f"**Error: {str(e)}**")
+    except Exception as e:
+        await client.disconnect()
+        return await phone_code_msg.reply(f"**Error: {str(e)}**")
     
-    string_session = await client.export_session_string()
-    await client.disconnect()
+    try:
+        string_session = await client.export_session_string()
+        await client.disconnect()
+    except Exception as e:
+        await client.disconnect()
+        return await message.reply(f"**Error exporting session: {str(e)}**")
     
     if len(string_session) < SESSION_STRING_SIZE:
-        return await message.reply('<b>invalid session sring</b>')
+        return await message.reply('<b>Invalid session string</b>')
     
     try:
         # Save session to database
         await db.set_session(message.from_user.id, session=string_session)
-        await bot.send_message(message.from_user.id, "<b>Account Login Successfully.\n\nNow you can use /accept command to accept all pending join requests.\n\nIf You Get Any Error Related To AUTH KEY Then /logout first and /login again</b>")
+        await bot.send_message(
+            message.from_user.id, 
+            "<b>✅ Account Login Successfully.\n\nNow you can use /accept command to accept all pending join requests.\n\nIf You Get Any Error Related To AUTH KEY Then /logout first and /login again</b>"
+        )
     except Exception as e:
         return await message.reply_text(f"<b>ERROR IN LOGIN:</b> `{e}`")
 
