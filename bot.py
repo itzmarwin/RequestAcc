@@ -1,9 +1,16 @@
 from pyrogram import Client
 from pyrogram.errors import ApiIdInvalid, AccessTokenInvalid, AccessTokenExpired
 from config import API_ID, API_HASH, BOT_TOKEN
-from pyromod import listen  # Important: Import pyromod
 import logging
 import sys
+
+# Import pyromod with error handling
+try:
+    from pyromod import listen
+    PYROMOD_AVAILABLE = True
+except ImportError:
+    PYROMOD_AVAILABLE = False
+    logger.warning("⚠️  pyromod not available, some features may not work")
 
 # ========================================
 # LOGGING CONFIGURATION
@@ -33,6 +40,15 @@ class Bot(Client):
                 workers=50,
                 sleep_threshold=10
             )
+            
+            # Initialize pyromod listeners if available
+            if PYROMOD_AVAILABLE:
+                try:
+                    self.listeners = {}
+                    logger.info("✅ Pyromod listeners initialized")
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not initialize pyromod: {e}")
+            
             logger.info("✅ Bot instance created successfully")
         except Exception as e:
             logger.error(f"❌ Failed to create bot instance: {e}")
